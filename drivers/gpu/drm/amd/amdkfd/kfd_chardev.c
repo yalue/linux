@@ -33,6 +33,7 @@
 #include <linux/time.h>
 #include <linux/mm.h>
 #include <linux/mman.h>
+#include <linux/pid.h>
 #include <linux/dma-buf.h>
 #include <asm/processor.h>
 #include "kfd_priv.h"
@@ -1745,6 +1746,132 @@ static int kfd_ioctl_smi_events(struct file *filep,
 	return kfd_smi_event_open(dev, &args->anon_fd);
 }
 
+// Returns the kfd_process associated with the given PID, or NULL if the
+// process isn't found.
+static struct kfd_process *kfd_get_process_by_pid(int pid)
+{
+	struct task_struct *target = NULL;
+	struct kfd_process *to_return = NULL;
+	target = get_pid_task(find_get_pid(pid), PIDTYPE_PID);
+	if (!target) {
+		printk("KFD: Couldn't find task_struct for PID %d.\n", pid);
+		return NULL;
+	}
+	printk("KFD: Found task struct @0x%p for PID %d.\n", target, pid);
+	to_return = kfd_get_process(target);
+	if (!to_return || IS_ERR(to_return)) {
+		printk("KFD: Failed getting kfd_process for PID %d: %ld.\n",
+			pid, PTR_ERR(to_return));
+		return NULL;
+	}
+	return kfd_get_process(target);
+}
+
+// Takes a task_struct and evicts the queues associated with it, if it has any.
+// Returns 0 on success.
+int kfd_evict_process_queues_by_task_struct(struct task_struct *task) {
+	struct kfd_process *target = NULL;
+	int pid = task->pid;
+	int tgid = task->tgid;
+	target = kfd_get_process(task);
+	if (!target || IS_ERR(target)) {
+		printk("KFD: Failed getting kfd_process for evicting TGID %d, "
+			"PID %d: %ld\n", tgid, pid, PTR_ERR(target));
+		return -EINVAL;
+	}
+	if (kfd_process_evict_queues(target) != 0) {
+		printk("Failed evicting queues for TGID %d, PID %d.\n", tgid,
+			pid);
+		return -EINVAL;
+	}
+	printk("KFD: Evicted queues for PID %d (PASID 0x%x).\n", pid,
+		target->pasid);
+	return 0;
+}
+EXPORT_SYMBOL(kfd_evict_process_queues_by_task_struct);
+
+// Takes a given process PID and evicts the queues for that process.
+int kfd_evict_process_queues_by_pid(int pid)
+{
+	struct kfd_process *target = NULL;
+	if (pid <= 0) return -EINVAL;
+	printk("KFD: About to look up process PID %d for eviction.\n", pid);
+	target = kfd_get_process_by_pid(pid);
+	if (!target) {
+		printk("KFD: Couldn't get kfd_process for eviction with PID "
+			"%d.\n", pid);
+		return -EINVAL;
+	}
+	if (kfd_process_evict_queues(target) != 0) {
+		printk("KFD: Failed evicting queues for PID %d.\n", pid);
+		return -EINVAL;
+	}
+	printk("KFD: Evicted queues for PID %d (PASID 0x%x).\n", pid,
+		target->pasid);
+	return 0;
+}
+EXPORT_SYMBOL(kfd_evict_process_queues_by_pid);
+
+static int kfd_ioctl_evict_process_queues(struct file *filep,
+	struct kfd_process *p, void *data)
+{
+	struct kfd_ioctl_evict_queues_args *args = data;
+	int pid = args->process_pid;
+	return kfd_evict_process_queues_by_pid(pid);
+}
+
+// Reverses the eviction performed by kfd_evict_process_queues_by_task_struct.
+// Returns 0 on success.
+int kfd_restore_process_queues_by_task_struct(struct task_struct *task) {
+	struct kfd_process *target = NULL;
+	int pid = task->pid;
+	int tgid = task->tgid;
+	target = kfd_get_process(task);
+	if (!target || IS_ERR(target)) {
+		printk("KFD: Failed getting kfd_process for restoring TGID %d,"
+			" PID %d: %ld\n", tgid, pid, PTR_ERR(target));
+		return -EINVAL;
+	}
+	if (kfd_process_restore_queues(target) != 0) {
+		printk("Failed restoring queues for TGID %d, PID %d.\n", tgid,
+			pid);
+		return -EINVAL;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(kfd_restore_process_queues_by_task_struct);
+
+// Restores queues for the process with the given PID after they have been
+// evicted.
+int kfd_restore_process_queues_by_pid(int pid)
+{
+	struct kfd_process *target = NULL;
+	if (pid <= 0) return -EINVAL;
+	printk("KFD: About to look up process PID %d for restoration.\n", pid);
+	target = kfd_get_process_by_pid(pid);
+	if (!target) {
+		printk("KFD: Couldn't get kfd_process for restore with PID "
+			"%d.\n", pid);
+		return -EINVAL;
+	}
+	if (kfd_process_restore_queues(target) != 0) {
+		printk("KFD: Failed restoring queues for PID %d.\n", pid);
+		return -EINVAL;
+	}
+	printk("KFD: Restored queues for PID %d (PASID 0x%x).\n", pid,
+		target->pasid);
+	return 0;
+}
+EXPORT_SYMBOL(kfd_restore_process_queues_by_pid);
+
+static int kfd_ioctl_restore_process_queues(struct file *filep,
+	struct kfd_process *p, void *data)
+{
+	struct kfd_ioctl_restore_queues_args *args = data;
+	int pid = args->process_pid;
+	return kfd_restore_process_queues_by_pid(pid);
+}
+
 static int kfd_ioctl_set_xnack_mode(struct file *filep,
 				    struct kfd_process *p, void *data)
 {
@@ -1903,6 +2030,12 @@ static const struct amdkfd_ioctl_desc amdkfd_ioctls[] = {
 
 	AMDKFD_IOCTL_DEF(AMDKFD_IOC_SET_XNACK_MODE,
 			kfd_ioctl_set_xnack_mode, 0),
+
+	AMDKFD_IOCTL_DEF(AMDKFD_IOC_EVICT_PROCESS_QUEUES,
+			kfd_ioctl_evict_process_queues, 0),
+
+	AMDKFD_IOCTL_DEF(AMDKFD_IOC_RESTORE_PROCESS_QUEUES,
+			kfd_ioctl_restore_process_queues, 0),
 };
 
 #define AMDKFD_CORE_IOCTL_COUNT	ARRAY_SIZE(amdkfd_ioctls)

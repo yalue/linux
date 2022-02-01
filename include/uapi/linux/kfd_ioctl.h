@@ -474,6 +474,16 @@ enum kfd_mmio_remap {
 	KFD_MMIO_REMAP_HDP_REG_FLUSH_CNTL = 4,
 };
 
+struct kfd_ioctl_evict_queues_args {
+	__u32 process_pid;
+	__u32 pad;
+};
+
+struct kfd_ioctl_restore_queues_args {
+	__u32 process_pid;
+	__u32 pad;
+};
+
 /* Guarantee host access to memory */
 #define KFD_IOCTL_SVM_FLAG_HOST_ACCESS 0x00000001
 /* Fine grained coherency between all devices with access */
@@ -740,7 +750,13 @@ struct kfd_ioctl_set_xnack_mode_args {
 #define AMDKFD_IOC_SET_XNACK_MODE		\
 		AMDKFD_IOWR(0x21, struct kfd_ioctl_set_xnack_mode_args)
 
+#define AMDKFD_IOC_EVICT_PROCESS_QUEUES		\
+		AMDKFD_IOW(0x22, struct kfd_ioctl_evict_queues_args)
+
+#define AMDKFD_IOC_RESTORE_PROCESS_QUEUES	\
+		AMDKFD_IOW(0x23, struct kfd_ioctl_restore_queues_args)
+
 #define AMDKFD_COMMAND_START		0x01
-#define AMDKFD_COMMAND_END		0x22
+#define AMDKFD_COMMAND_END		0x24
 
 #endif

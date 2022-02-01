@@ -147,6 +147,9 @@ static int pm_create_runlist_ib(struct packet_manager *pm,
 	/* build the run list ib packet */
 	list_for_each_entry(cur, queues, list) {
 		qpd = cur->qpd;
+
+		pr_debug("Adding queues from process with lead thread ID %d\n",
+			(int) qpd->pqm->process->lead_thread->pid);
 		/* build map process packet */
 		if (processes_mapped >= pm->dqm->processes_count) {
 			pr_debug("Not enough space left in runlist IB\n");
