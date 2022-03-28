@@ -55,6 +55,9 @@
 #include <asm/mwait.h>
 #include <asm/msr.h>
 
+/* dsites 2021.09.19 */
+#include <linux/kutrace.h>
+
 #define INTEL_IDLE_VERSION "0.5.1"
 
 static struct cpuidle_driver intel_idle_driver = {
@@ -130,6 +133,9 @@ static __cpuidle int intel_idle(struct cpuidle_device *dev,
 	struct cpuidle_state *state = &drv->states[index];
 	unsigned long eax = flg2MWAIT(state->flags);
 	unsigned long ecx = 1; /* break on interrupt flag */
+
+	/* dsites 2021.09.19 */
+	kutrace1(KUTRACE_MWAIT, eax);
 
 	if (state->flags & CPUIDLE_FLAG_IRQ_ENABLE)
 		local_irq_enable();

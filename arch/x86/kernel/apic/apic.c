@@ -62,6 +62,9 @@
 #include <asm/intel-family.h>
 #include <asm/irq_regs.h>
 
+/* dsites 2021.09.19 */
+#include <linux/kutrace.h>
+
 unsigned int num_processors;
 
 unsigned disabled_cpus;
@@ -1099,9 +1102,24 @@ DEFINE_IDTENTRY_SYSVEC(sysvec_apic_timer_interrupt)
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
 	ack_APIC_irq();
+
+	/* dsites 2021.09.19  */
+	kutrace1(KUTRACE_IRQ + LOCAL_TIMER_VECTOR, 0);
+
 	trace_local_timer_entry(LOCAL_TIMER_VECTOR);
 	local_apic_timer_interrupt();
 	trace_local_timer_exit(LOCAL_TIMER_VECTOR);
+
+	/* dsites 2021.09.19  */
+	kutrace1(KUTRACE_IRQRET + LOCAL_TIMER_VECTOR, 0);
+
+	/* dsites 2021.09.19 Trace return address -- we are also a profiler now */
+        /*  This call will also insert the current CPU frequency if available */
+#ifdef CONFIG_KUTRACE
+	if (kutrace_tracing) {
+		(*kutrace_global_ops.kutrace_trace_2)(KUTRACE_PC, 0, regs->ip);
+	}
+#endif
 
 	set_irq_regs(old_regs);
 }

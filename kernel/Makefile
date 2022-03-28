@@ -158,4 +158,7 @@ quiet_cmd_genikh = CHK     $(obj)/kheaders_data.tar.xz
 $(obj)/kheaders_data.tar.xz: FORCE
 	$(call cmd,genikh)
 
+# dsites 2021.09.19
+obj-$(CONFIG_KUTRACE) += kutrace/
+
 clean-files := kheaders_data.tar.xz kheaders.md5
